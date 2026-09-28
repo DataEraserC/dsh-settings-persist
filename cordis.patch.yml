@@ -1,0 +1,6 @@
+# dsh-settings-persist — bundle patch: insert the headless entry.
+# No configuration: everything is derived from the profile the plugin runs in.
+- insert:
+    - id: settingsPersist
+      name: 'dsh-settings-persist'
+      config: {}

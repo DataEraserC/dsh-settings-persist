@@ -1,0 +1,36 @@
+{
+  "name": "dsh-settings-persist",
+  "version": "0.1.0",
+  "description": "Persist DSH Settings edits across nix managed-profile syncs",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DataEraserC/dsh-settings-persist.git"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "plugin"
+  ],
+  "author": "DataEraserC",
+  "license": "MIT"
+}
