@@ -55,13 +55,24 @@ Resulting semantics for the three edit channels:
 
 Settings → **设置快照 / Settings Snapshots**: the auto backup card (last
 write, row count, matches-current, restore now, rebuild-from-current) plus a
-manual snapshot list with create / restore / delete. The page polls the
-plugin's own JSON routes every few seconds:
+manual snapshot list. Per snapshot / for the current config you get:
+
+- **Preview** — the raw profile document in a scrollable viewer with copy;
+- **Diff** — a git-style unified line diff (LCS, 3 lines of context) *and*
+  a per-setting row matrix (`changed` / `snapshot only` / `current only`),
+  each changed row expandable to its own JSON line diff;
+- **Merge** — check the settings you want from the snapshot and restore
+  just those (`restore {id, only: [row ids]}`); "current only" rows are
+  never touched, which makes the merge safe without hand-editing YAML.
+
+Creating a snapshot works with an empty label too (the id is a timestamp).
+The page polls the plugin's own JSON routes every few seconds:
 
 ```
 GET  /settings-persist/state        inventory (auto + manual metadata)
-POST /settings-persist/snapshot     create {name?}
-POST /settings-persist/restore      {id: "<snapshot id>" | "auto"}
+GET  /settings-persist/document     raw document + rows (?id=current|auto|<snapshot id>)
+POST /settings-persist/snapshot     create {name?}        (name may be empty)
+POST /settings-persist/restore      {id: "<snapshot id>" | "auto", only?: [row ids]}
 POST /settings-persist/delete       {id}          (manual only)
 POST /settings-persist/reset-auto   rebuild auto from the live document
 ```

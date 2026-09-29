@@ -1,7 +1,7 @@
 /**
  * Integration smoke test: boots the plugin against a mocked cordis context +
  * ConfigEditor inside a temp $DSH_HOME, then drives the boot restore and all
- * five routes end-to-end. Covers the v1 → v2 legacy migration and the v2
+ * six routes end-to-end. Covers the v1 → v2 legacy migration and the v2
  * core guarantee — a rotated .nix-managed fingerprint (nix rebuild) must NOT
  * discard the user's auto backup.
  */
@@ -111,8 +111,10 @@ async function makeHarness({ documentText, fingerprint, legacyState = null }) {
   apply(ctx)
 
   const call = async (routePath, method, body) => {
-    const handler = routes.get(routePath)
-    assert.ok(handler, `route ${routePath} registered`)
+    const qIndex = routePath.indexOf('?')
+    const barePath = qIndex >= 0 ? routePath.slice(0, qIndex) : routePath
+    const handler = routes.get(barePath)
+    assert.ok(handler, `route ${barePath} registered`)
     const req = Object.assign(
       (async function* () {
         if (body !== undefined) yield Buffer.from(JSON.stringify(body))
@@ -162,7 +164,7 @@ test('boot: legacy v1 file migrates to auto and is replayed over a reverted docu
     },
   })
   try {
-    await waitFor(() => harness.routes.size >= 5)
+    await waitFor(() => harness.routes.size >= 6)
     await waitFor(async () => {
       try {
         await readFile(harness.legacyPath, 'utf8')
@@ -207,7 +209,7 @@ test('boot: rotated fingerprint (nix rebuild) still restores the auto backup', a
     },
   })
   try {
-    await waitFor(() => harness.routes.size >= 5)
+    await waitFor(() => harness.routes.size >= 6)
     harness.trigger('app-boot/config-reload')
     // v1 would have adopted (fingerprint mismatch → nix wins → settings lost);
     // v2 must replay the auto backup regardless of the rotated fingerprint.
@@ -231,7 +233,7 @@ test('routes: snapshot create → inventory → restore → delete → reset-aut
     },
   })
   try {
-    await waitFor(() => harness.routes.size >= 5)
+    await waitFor(() => harness.routes.size >= 6)
     harness.trigger('app-boot/config-reload')
     await waitFor(async () => {
       const view = await harness.call('/settings-persist/state', 'GET')
@@ -293,12 +295,106 @@ test('boot: identical documents are a noop (no edits)', async () => {
     },
   })
   try {
-    await waitFor(() => harness.routes.size >= 5)
+    await waitFor(() => harness.routes.size >= 6)
     harness.trigger('app-boot/config-reload')
     await sleep(80)
     assert.deepEqual(harness.edits, [], 'no replay when documents match')
     const view = await harness.call('/settings-persist/state', 'GET')
     assert.equal(view.body.auto.matchesCurrent, true)
+  } finally {
+    harness.dispose()
+  }
+})
+
+test('document route: preview payloads for current / auto / snapshot / bad ids', async () => {
+  const harness = await makeHarness({
+    documentText: 'LIVE-DOC\n',
+    fingerprint: 'fp-1\n',
+    legacyState: {
+      schema: 1,
+      profile: 'test-profile',
+      fingerprint: 'fp-1',
+      documentText: 'USER-EDIT\n',
+      rows: [
+        { id: 'x', name: 'x', config: { a: 1 } },
+        { id: 'y', name: 'y', config: { b: 2 } },
+      ],
+    },
+  })
+  try {
+    await waitFor(() => harness.routes.size >= 6)
+    harness.trigger('app-boot/config-reload')
+    await waitFor(async () => {
+      const view = await harness.call('/settings-persist/state', 'GET')
+      return view.body.auto !== null && view.body.auto.matchesCurrent
+    })
+
+    // current: raw live document + rows from configuration()
+    const current = await harness.call('/settings-persist/document?id=current', 'GET')
+    assert.equal(current.status, 200)
+    assert.equal(current.body.text, await harness.readDocument())
+    assert.deepEqual(current.body.rows.map((row) => row.id).sort(), ['x', 'y'])
+
+    // auto: the auto backup payload
+    const auto = await harness.call('/settings-persist/document?id=auto', 'GET')
+    assert.equal(auto.status, 200)
+    assert.equal(auto.body.text, JSON.parse(await readFile(harness.statePath, 'utf8')).documentText)
+
+    // a manual snapshot payload
+    const created = await harness.call('/settings-persist/snapshot', 'POST', { name: 'p' })
+    const snapId = created.body.snapshot.id
+    const snap = await harness.call(`/settings-persist/document?id=${snapId}`, 'GET')
+    assert.equal(snap.status, 200)
+    assert.equal(snap.body.rows.length, 2)
+
+    // guards
+    assert.equal((await harness.call('/settings-persist/document?id=../evil', 'GET')).status, 400)
+    assert.equal((await harness.call('/settings-persist/document?id=nope', 'GET')).status, 404)
+  } finally {
+    harness.dispose()
+  }
+})
+
+test('selective restore (merge): only requested row ids are applied', async () => {
+  const harness = await makeHarness({
+    documentText: 'LIVE-DOC\n',
+    fingerprint: 'fp-1\n',
+    legacyState: {
+      schema: 1,
+      profile: 'test-profile',
+      fingerprint: 'fp-1',
+      documentText: 'USER-EDIT\n',
+      rows: [
+        { id: 'x', name: 'x', config: { a: 1 } },
+        { id: 'y', name: 'y', config: { b: 2 } },
+      ],
+    },
+  })
+  try {
+    await waitFor(() => harness.routes.size >= 6)
+    harness.trigger('app-boot/config-reload')
+    await waitFor(async () => {
+      const view = await harness.call('/settings-persist/state', 'GET')
+      return view.body.auto !== null && view.body.auto.matchesCurrent
+    })
+    assert.deepEqual(harness.edits, ['x', 'y'], 'boot replayed both rows')
+
+    const created = await harness.call('/settings-persist/snapshot', 'POST', {})
+    const snapId = created.body.snapshot.id
+    assert.equal(created.body.snapshot.rowCount, 2)
+
+    // Merge only row x: y must not be replayed.
+    await writeFile(harness.documentPath, 'MUTATED-DOC\n')
+    const before = harness.edits.length
+    const merged = await harness.call('/settings-persist/restore', 'POST', { id: snapId, only: ['x'] })
+    assert.equal(merged.status, 200)
+    assert.equal(merged.body.applied, 1)
+    assert.deepEqual(harness.edits.slice(before), ['x'])
+    assert.deepEqual(harness.getApplied().get('y'), { b: 2 }, 'y untouched')
+
+    // Requesting only rows that do not exist is rejected.
+    const ghost = await harness.call('/settings-persist/restore', 'POST', { id: snapId, only: ['ghost'] })
+    assert.equal(ghost.status, 400)
   } finally {
     harness.dispose()
   }
