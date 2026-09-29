@@ -1,11 +1,12 @@
 {
   "name": "dsh-settings-persist",
-  "version": "0.1.0",
-  "description": "Persist DSH Settings edits across nix managed-profile syncs",
+  "version": "0.2.0",
+  "description": "Persist DSH Settings edits across nix managed-profile syncs, with an auto backup and a snapshot management page",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
@@ -19,6 +20,13 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-locale"
+      ],
+      "platform": "web"
     }
   },
   "repository": {

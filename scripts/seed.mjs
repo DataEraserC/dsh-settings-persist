@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Seed $DSH_HOME/settings-persist/<key>.json from the CURRENT live profile
- * document. Run this once, before the first dsh launch that has
+ * Seed $DSH_HOME/settings-persist/<key>/auto.json from the CURRENT live
+ * profile document. Run this once, before the first dsh launch that has
  * dsh-settings-persist deployed — at that point dsh-sync-profiles will have
  * already reverted the document, and the plugin could only adopt the empty
  * snapshot.
@@ -10,7 +10,7 @@
  *   node scripts/seed.mjs <profileDir> [--force] [--dry-run]
  *
  *   <profileDir>   e.g. ~/.dsh/profiles/nix-web-qq
- *   --force        overwrite an existing state file
+ *   --force        overwrite an existing auto snapshot
  *   --dry-run      print what would be written, write nothing
  *
  * YAML parsing needs the `yaml` package: either `npm install` inside the
@@ -74,7 +74,7 @@ const profileDir = path.resolve(positional[0])
 const documentPath = path.join(profileDir, 'cordis.patch.yml')
 const fingerprintPath = path.join(profileDir, '.nix-managed')
 const profileKey = path.basename(profileDir)
-const statePath = path.join(path.dirname(path.dirname(profileDir)), 'settings-persist', `${profileKey}.json`)
+const statePath = path.join(path.dirname(path.dirname(profileDir)), 'settings-persist', profileKey, 'auto.json')
 
 let documentText
 try {
@@ -118,9 +118,11 @@ if (existing && !force) die(`${statePath} already exists — pass --force to ove
 const state = {
   schema: SCHEMA,
   profile: profileKey,
+  source: 'auto',
   fingerprint,
   documentText,
   rows,
+  updatedAt: new Date().toISOString(),
   seededAt: new Date().toISOString(),
   seededBy: 'dsh-settings-persist/scripts/seed.mjs',
 }
@@ -141,4 +143,4 @@ const tmp = `${statePath}.${process.pid}.tmp`
 await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 })
 await rename(tmp, statePath)
 await chmod(statePath, 0o600)
-console.log('seeded: state file written — safe to deploy and restart dsh')
+console.log('seeded: auto snapshot written — safe to deploy and restart dsh')
