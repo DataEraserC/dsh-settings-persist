@@ -1,6 +1,6 @@
 {
   "name": "dsh-settings-persist",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Persist DSH Settings edits across nix managed-profile syncs, with an auto backup and a snapshot management page",
   "type": "module",
   "main": "lib/index.js",
