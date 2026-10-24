@@ -1,7 +1,8 @@
 # dsh-settings-persist
 
 Keep DeepSeek Harness **Settings edits alive across launches** on nix
-**managed** profiles — with an auto backup and a snapshot management page.
+**managed** profiles — with an auto backup, a snapshot management page and a
+`/snapshots` command.
 
 ## The problem
 
@@ -26,7 +27,7 @@ State lives per profile under `$DSH_HOME/settings-persist/<profile>/`
 | path | role |
 | --- | --- |
 | `auto.json` | rolling **auto backup**: written on every live Settings save, replayed at every boot |
-| `snapshots/<id>.json` | **manual snapshots**: created / restored / deleted only from the settings page |
+| `snapshots/<id>.json` | **manual snapshots**: created / restored / deleted from the settings page or `/snapshots` |
 
 | situation | verdict | action |
 | --- | --- | --- |
@@ -83,6 +84,32 @@ classic `window.__ModuleLoader__.load` script registered into the generic
 `settings.section` slot — the stable recipe that has survived dsh UI changes
 in `dsh-bas-remote`, with no bundler step (`lib/client.js` is the artifact).
 
+## Snapshot command
+
+The page is `platform: "web"`, so the TUI never renders it — and before this
+command existed, every snapshot action was an HTTP route the page owns, which
+left a terminal session with no way to touch a snapshot at all. `ctx.commands`
+is the one surface the web composer and the TUI both dispatch, so:
+
+```
+/snapshots                          list the auto backup and every manual snapshot
+/snapshots save [name]              create a manual snapshot (name optional)
+/snapshots show <id|auto|current>   list a snapshot's rows, for a selective restore
+/snapshots restore <id|auto> [ids]  restore it; row ids make the restore selective
+/snapshots delete <id>              delete a manual snapshot
+/snapshots reset-auto               rebuild the auto backup from the live settings
+```
+
+The subcommands call the same functions the routes do — `stateView`,
+`createManualSnapshot`, `documentById`, `restoreById`, `deleteManual`,
+`resetAuto` — so the two surfaces are one implementation with two entry
+points, not two implementations that can drift.
+
+The registry is read with `ctx.reflect.get('commands')` rather than by naming
+`commands` in `inject`: it is an optional service, and demanding it would turn
+"this harness has no command registry" into "the plugin does not load", which
+would cost the boot restore over a surface that may simply not be there.
+
 ## Seeding (one time, before first deploy)
 
 The first launch with this plugin deployed happens *after* sync has already
@@ -104,6 +131,7 @@ Existing v1 files (`settings-persist/<profile>.json`) migrate to
 ```sh
 npm test                # = node --test test/*.test.js: unit tests (decision
                         # logic, paths, inventory) + boot/routes integration
+                        # + the /snapshots command against the same functions
 ```
 
 Bundled by nix via `pkgs.dsh.buildDshBundle` (see `dsh-worktree` in
